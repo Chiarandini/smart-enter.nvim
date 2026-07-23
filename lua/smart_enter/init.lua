@@ -24,17 +24,25 @@ local function rules_for(ft)
 	end
 
 	local cfg   = require("smart_enter.config").get()
-	local ftcfg = cfg.filetypes[ft]
 	local rules = require("smart_enter.rules")
 	local list  = {}
 
-	if ftcfg then
+	-- Append a filetype config's user rules (they win), then its preset's.
+	local function add(ftcfg)
+		if not ftcfg then
+			return
+		end
 		for _, r in ipairs(ftcfg.rules or {}) do
 			list[#list + 1] = rules.normalize(r)
 		end
 		for _, r in ipairs(require("smart_enter.presets").get(ftcfg.preset) or {}) do
 			list[#list + 1] = rules.normalize(r)
 		end
+	end
+
+	add(cfg.filetypes[ft])
+	if ft ~= "*" then
+		add(cfg.filetypes["*"]) -- rules for every filetype, after the specific ones
 	end
 
 	cache[ft] = list

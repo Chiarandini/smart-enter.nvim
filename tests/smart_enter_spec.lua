@@ -56,6 +56,7 @@ se.setup({
 		fakekeep  = { rules = { { pattern = "^", item = { text = "\\item ", exit_empty = false } } } },
 		fakealpha = { rules = { { pattern = "^", item = { text = "\\item[{})] ", counter = "alpha" } } } },
 		fakeroman = { rules = { { pattern = "^", item = { text = "{}) ", counter = "roman" } } } },
+		["*"]     = { rules = { { pattern = "^WILD", prefix = "wild " } } },
 	},
 })
 
@@ -147,9 +148,24 @@ do
 	eq("roman counter increments", out, { "iii) third", "iv) " })
 end
 
--- No rule for the filetype -> fallback (dispatch returns false).
+-- Wildcard "*" rules apply to a filetype with no config of its own.
 do
-	local _, _, handled = run("nosuchft", { "plain" }, 1, 5)
+	local out, _, handled = run("randomft", { "WILD one" }, 1, 8)
+	eq("wildcard rule applies to any filetype", out, { "WILD one", "wild " })
+	eq("wildcard rule counts as handled", handled, true)
+end
+
+-- Wildcard runs after the filetype's own rules (specific wins).
+do
+	-- fakelatex has its own rule; a WILD line there is not matched by it, so
+	-- the wildcard still applies.
+	local out = run("fakelatex", { "WILD two" }, 1, 8)
+	eq("wildcard still applies under a configured ft", out, { "WILD two", "wild " })
+end
+
+-- No rule for the filetype and no wildcard match -> fallback.
+do
+	local _, _, handled = run("randomft", { "plain" }, 1, 5)
 	eq("unmatched ft falls back", handled, false)
 end
 

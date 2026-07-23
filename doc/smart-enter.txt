@@ -9,9 +9,8 @@ CONTENTS					*smart-enter-contents*
 4. Presets				|smart-enter-presets|
 5. Matchers and actions			|smart-enter-matchers|
 6. Binding to <CR>			|smart-enter-cr|
-7. Non-goals				|smart-enter-non-goals|
-8. Health				|smart-enter-health|
-9. API					|smart-enter-api|
+7. Health				|smart-enter-health|
+8. API					|smart-enter-api|
 
 ==============================================================================
 1. Overview					*smart-enter-overview*
@@ -65,7 +64,9 @@ Options ~
 
 Each filetype's effective rule list is your `rules` first (they win), then the
 `preset`'s rules. Rules are tried in order; the first whose matcher fires runs
-and stops the chain.
+and stops the chain. A ["*"] filetype entry applies its rules to every
+filetype, after that filetype's own rules (useful for behaviour you want
+everywhere, such as continuing comments).
 
 Declarative rule ~
 Static insertion. The new line is auto indented with the current line's
@@ -169,22 +170,14 @@ and reports whether a rule matched:
 	end)
 <
 ==============================================================================
-7. Non-goals					*smart-enter-non-goals*
-
-smart-enter stays small on purpose. These belong to dedicated plugins:
-- Renumbering or reformatting a whole list after later edits (autolist.nvim).
-- <Tab> and <S-Tab> indent and dedent of list items.
-- Normal mode `o` and `O` continuation. Bind `dispatch()` to any key instead.
-
-==============================================================================
-8. Health					*smart-enter-health*
+7. Health					*smart-enter-health*
 
 `:checkhealth smart_enter` reports the Neovim version, the configured `key`
 and `fallback`, the configured filetypes, and whether the `latex` parser is
 installed when a filetype uses the latex preset.
 
 ==============================================================================
-9. API						*smart-enter-api*
+8. API						*smart-enter-api*
 
 					*smart-enter.setup()*
 `require("smart_enter").setup(opts)`

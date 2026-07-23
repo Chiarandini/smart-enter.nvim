@@ -29,10 +29,12 @@ local defaults = {
 	fallback = "newline",
 
 	-- Per filetype rules. Each entry is { preset = <name|list>, rules = {...} }.
-	-- Effective order is user `rules` first (they win), then the preset's.
+	-- Effective order is user `rules` first (they win), then the preset's. A
+	-- ["*"] entry applies to every filetype, after that filetype's own rules.
 	--   filetypes = {
 	--     markdown = { preset = "markdown" },
-	--     tex      = { preset = "latex", rules = { { env = "exercise", prefix = "\\Question " } } },
+	--     tex      = { preset = "latex", rules = { { env = "exercise", item = "\\Question " } } },
+	--     ["*"]    = { rules = { <a rule for every filetype> } },
 	--   }
 	filetypes = {},
 }

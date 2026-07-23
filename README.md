@@ -24,8 +24,7 @@ configured filetypes.
 
 ## Setup
 
-The entry point is `require("smart_enter").setup(config)`, called once from
-your config with whatever plugin manager you use.
+Call `require("smart_enter").setup{}` once:
 
 ```lua
 require("smart_enter").setup({
@@ -50,9 +49,8 @@ lazy's way of passing that config, and `config` calls `setup`:
 
 ## Extending
 
-`filetypes[ft]` is `{ preset = <name|list>, rules = {...} }`. The effective
-order is your `rules` first (they win), then the preset's. Because `preset` and
-`rules` are separate keys, they compose cleanly:
+`filetypes[ft]` is `{ preset = <name|list>, rules = {...} }`. Your `rules` are
+tried before the preset's, so they win:
 
 ```lua
 -- adds a rule without touching the latex preset
@@ -61,20 +59,24 @@ require("smart_enter").setup({ filetypes = { tex = { rules = {
 } } } })
 ```
 
+A `["*"]` filetype applies its rules to every filetype, after that filetype's
+own rules. Use it for behaviour you want everywhere, for example continuing a
+comment leader read from `commentstring`.
+
 ### Rule shapes
 
-Declarative, static text. The new line is auto indented to the current line,
-then `prefix`; `append` is glued to the current line at the cursor (the row
-separator):
+Insert fixed text around the break with `append` and `prefix`. The new line is
+indented to the current line, then `prefix`; `append` is glued to the current
+line at the cursor (the row separator):
 
 ```lua
 { env = "align", append = "\\\\", prefix = "&= " }   -- match one environment
 { pattern = "^%s*> ", prefix = "> " }                -- match on the line text
 ```
 
-Declarative list continuation via `item`. The new entry is indented to match
-the current entry (not a soft wrapped continuation line), and pressing on an
-empty entry clears the marker and exits the list. `item` is a string, or a
+Continue a list with `item`. The new entry lines up with the current entry,
+not with the deeper indent of a soft wrapped continuation line, and pressing on
+an empty entry clears the marker and exits the list. `item` is a string, or a
 table with `exit_empty` and `counter`:
 
 ```lua
@@ -87,8 +89,8 @@ table with `exit_empty` and `counter`:
 `counter` is `"arabic"`, `"alpha"`/`"Alpha"`, or `"roman"`/`"Roman"`; the `{}`
 in `text` becomes the previous entry's counter plus one.
 
-Functional, full control (renumbering, exit on empty, anything). `handle`
-returns `false` to fall through to the next rule; anything else (including
+Run your own logic with `handle` for anything the fields above do not cover.
+It returns `false` to fall through to the next rule; anything else (including
 `nil`) counts as handled:
 
 ```lua
