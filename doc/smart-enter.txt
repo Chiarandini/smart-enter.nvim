@@ -1,0 +1,205 @@
+*smart-enter.txt*	A context dispatched newline for Neovim
+
+==============================================================================
+CONTENTS					*smart-enter-contents*
+
+1. Overview				|smart-enter-overview|
+2. Setup				|smart-enter-setup|
+3. Filetypes and rules			|smart-enter-rules|
+4. Presets				|smart-enter-presets|
+5. Matchers and actions			|smart-enter-matchers|
+6. Binding to <CR>			|smart-enter-cr|
+7. Non-goals				|smart-enter-non-goals|
+8. Health				|smart-enter-health|
+9. API					|smart-enter-api|
+
+==============================================================================
+1. Overview					*smart-enter-overview*
+
+smart-enter maps one insert mode key (default `<S-CR>`) to a context action.
+It runs the first matching rule for the current filetype (continue a LaTeX
+environment, a Markdown list, a blockquote) and otherwise inserts a plain
+newline that does not re-insert a comment leader.
+
+Requirements:
+- Neovim 0.10 or newer.
+- The `latex` Treesitter parser for the latex preset.
+- A terminal that sends <S-CR> distinctly from <CR> (Kitty, WezTerm, iTerm2
+  with the CSI u profile, most GUIs). Otherwise set a different `key`, or set
+  `key = false` and call |smart-enter.dispatch()| from your own mapping.
+
+Run |:checkhealth| smart_enter to confirm the key, parser, and filetypes.
+
+==============================================================================
+2. Setup					*smart-enter-setup*
+
+>lua
+	require("smart_enter").setup({
+	  key      = "<S-CR>",
+	  fallback = "newline",
+	  filetypes = {
+	    markdown = { preset = "markdown" },
+	    tex      = { preset = "latex" },
+	    latex    = { preset = "latex" },
+	  },
+	})
+<
+Options ~
+					*smart-enter-key*
+`key`		Insert mode key that dispatches (default "<S-CR>"). false skips
+		the mapping so you can drive dispatch() yourself.
+
+					*smart-enter-fallback*
+`fallback`	What runs when no rule matches, for ANY filetype:
+		"newline"  newline with no comment leader continuation (strips
+			   r and o from 'formatoptions' for the one <CR>)
+		"cr"	   a literal <CR> (keeps comment continuation)
+		false	   do nothing
+		function(ctx)  arbitrary handler
+
+					*smart-enter-filetypes*
+`filetypes`	Map of filetype to { preset = <name|list>, rules = {...} }.
+
+==============================================================================
+3. Filetypes and rules				*smart-enter-rules*
+
+Each filetype's effective rule list is your `rules` first (they win), then the
+`preset`'s rules. Rules are tried in order; the first whose matcher fires runs
+and stops the chain.
+
+Declarative rule ~
+Static insertion. The new line is auto indented with the current line's
+leading whitespace, then `prefix`. `append` is glued to the current line at
+the cursor. Match by environment or by line pattern:
+>lua
+	{ env  = "align", append = "\\\\", prefix = "&= " }
+	{ pattern = "^%s*> ", prefix = "> " }
+<
+The `item` field continues a list-like environment. The new entry is indented
+to match the current entry (not a soft wrapped continuation line), and pressing
+on an empty entry clears the marker and exits the list. `item` is a string, or
+a table with `exit_empty` (default true) and `counter`:
+>lua
+	{ envs = { "itemize", "enumerate" }, item = "\\item " }
+	{ env  = "exercise", item = "\\Question " }
+	{ env  = "notes", item = { text = "\\item ", exit_empty = false } }
+	{ env  = "steps", item = { text = "\\item[{})] ", counter = "alpha" } }
+<
+`counter` is "arabic", "alpha"/"Alpha", or "roman"/"Roman". The "{}" in `text`
+becomes the previous entry's counter plus one, so a) continues to b), i) to
+ii), 1) to 2).
+Functional rule ~
+Full control, for list renumbering, exit on empty, and the like. `handle`
+returns false to fall through; anything else (including nil) counts as
+handled:
+>lua
+	{ pattern = "^(%s*)(%d+)%.%s(.*)", handle = function(ctx, caps)
+	    ctx.split("", caps[1] .. tostring(tonumber(caps[2]) + 1) .. ". ")
+	end }
+<
+ctx object ~
+Fields: `buf`, `win`, `row` (1 indexed), `col` (0 indexed byte), `line`,
+`ws` (leading whitespace), `filetype`. Editing primitives (each a single
+undo unit):
+	`ctx.split(append, prefix)`   break at the cursor; new line = prefix
+	`ctx.replace_line(text)`      replace the whole current line
+
+To add a rule without disturbing the preset (for example a personal exercise
+environment), use the separate `rules` key so an opts merge composes:
+>lua
+	opts = { filetypes = { tex = { rules = {
+	  { env = "exercise", prefix = "\\Question " },
+	} } } }
+<
+==============================================================================
+4. Presets					*smart-enter-presets*
+
+`markdown` ~
+Checkbox, unordered, ordered (incrementing the number), and blockquote
+continuation. Pressing the key on an empty item drops the marker and exits the
+list.
+
+`latex` ~
+Environment continuation via Treesitter (no VimTeX dependency, honours
+nesting): "\\" in matrix/cases/gather/multline families, "\\" then "&= " in
+align/alignat/flalign families, "\item " in itemize/enumerate/description.
+List items are indented to the current item, so continuing a soft wrapped
+item stays aligned, and an empty "\item" drops the marker and exits the list.
+
+==============================================================================
+5. Matchers and actions			*smart-enter-matchers*
+
+`require("smart_enter.matchers")` exposes builders for a rule's `match` field:
+
+`pattern(lua_pat)`	matches the current line; match data is the captures.
+`ts_env(names[, lang])`	matches when the cursor's nearest enclosing
+			*_environment (lang default "latex") is named in
+			`names`; match data is { env = <name> }.
+`env_chain(ctx[, lang])` the enclosing environment names, innermost first.
+
+`require("smart_enter.actions").item(template)` is the handler behind the
+`item` field (see |smart-enter-rules|). Use the `item` field for lists; reach
+for actions.item directly only when composing with a custom `match` or
+`handle`.
+
+matchers and actions are `require`d, so call them where setup() runs, for
+example inside a `config` function, the same as any Lua module loaded at
+startup:
+>lua
+	config = function()
+	  local item = require("smart_enter.actions").item
+	  require("smart_enter").setup({ filetypes = { tex = { rules = {
+	    { env = "exercise", handle = item("\\Question ") },
+	  } } } })
+	end
+<
+==============================================================================
+6. Binding to <CR>				*smart-enter-cr*
+
+To put the smart behaviour on <CR> while keeping an autopairs or completion
+map on <CR>, set `key = false` and compose in your own mapping.
+`dispatch({ fallback = false })` runs the rules, skips the built in fallback,
+and reports whether a rule matched:
+>lua
+	vim.keymap.set("i", "<CR>", function()
+	  if require("smart_enter").dispatch({ fallback = false }) then
+	    return
+	  end
+	  -- no rule matched: run your existing <CR> behaviour here
+	end)
+<
+==============================================================================
+7. Non-goals					*smart-enter-non-goals*
+
+smart-enter stays small on purpose. These belong to dedicated plugins:
+- Renumbering or reformatting a whole list after later edits (autolist.nvim).
+- <Tab> and <S-Tab> indent and dedent of list items.
+- Normal mode `o` and `O` continuation. Bind `dispatch()` to any key instead.
+
+==============================================================================
+8. Health					*smart-enter-health*
+
+`:checkhealth smart_enter` reports the Neovim version, the configured `key`
+and `fallback`, the configured filetypes, and whether the `latex` parser is
+installed when a filetype uses the latex preset.
+
+==============================================================================
+9. API						*smart-enter-api*
+
+					*smart-enter.setup()*
+`require("smart_enter").setup(opts)`
+		Apply config and (unless key=false) install the insert mode map.
+
+					*smart-enter.dispatch()*
+`require("smart_enter").dispatch([opts])`
+		Run the smart action for the current context. Returns true when a
+		rule handled it. `opts.fallback = false` skips the built in
+		fallback so you can compose with your own <CR>. Bind from any key.
+
+					*smart-enter.inspect()*
+`require("smart_enter").inspect([lang])`
+		Report the filetype, the Treesitter environment chain, and which
+		configured rules match at the cursor. Run it where the key
+		behaves unexpectedly to see what the rules see.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
