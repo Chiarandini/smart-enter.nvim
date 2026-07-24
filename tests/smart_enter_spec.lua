@@ -148,6 +148,28 @@ do
 	eq("roman counter increments", out, { "iii) third", "iv) " })
 end
 
+-- Markdown: continue an unordered item from a hard-wrapped continuation line.
+-- "  wrapped tail" is 14 bytes; the new "- " aligns with the original marker.
+do
+	local out = run("markdown", { "- some long item", "  wrapped tail" }, 2, 14)
+	eq("md continues unordered from wrapped line", out,
+		{ "- some long item", "  wrapped tail", "- " })
+end
+
+-- Markdown: continue an ordered item from a wrapped line ("   tail" is 3-space
+-- hang indent under "1. "); the number increments.
+do
+	local out = run("markdown", { "3. long ordered", "   tail here" }, 2, 12)
+	eq("md continues ordered from wrapped line", out,
+		{ "3. long ordered", "   tail here", "4. " })
+end
+
+-- Markdown: a paragraph after a list (blank line between) is not swept in.
+do
+	local _, _, handled = run("markdown", { "- item", "", "para" }, 3, 4)
+	eq("md wrapped rule stops at a blank line", handled, false)
+end
+
 -- Wildcard "*" rules apply to a filetype with no config of its own.
 do
 	local out, _, handled = run("randomft", { "WILD one" }, 1, 8)
