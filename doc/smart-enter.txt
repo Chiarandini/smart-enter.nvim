@@ -9,8 +9,9 @@ CONTENTS					*smart-enter-contents*
 4. Presets				|smart-enter-presets|
 5. Matchers and actions			|smart-enter-matchers|
 6. Binding to <CR>			|smart-enter-cr|
-7. Health				|smart-enter-health|
-8. API					|smart-enter-api|
+7. Recipes				|smart-enter-recipes|
+8. Health				|smart-enter-health|
+9. API					|smart-enter-api|
 
 ==============================================================================
 1. Overview					*smart-enter-overview*
@@ -170,14 +171,114 @@ and reports whether a rule matched:
 	end)
 <
 ==============================================================================
-7. Health					*smart-enter-health*
+7. Recipes					*smart-enter-recipes*
+
+Rules that are longer than one line, kept here so they can be copied rather
+than rediscovered.
+
+						*smart-enter-recipe-comment*
+Continue a line comment ~
+
+Repeat the comment leader on the next line, and clear the line when the
+comment is empty so a second press leaves the comment block. The leader comes
+from 'commentstring', so one rule covers every filetype through the ["*"]
+entry. Useful when 'formatoptions' omits "r": <CR> stays plain and the smart
+key continues the comment on demand.
+>lua
+	local comment = {
+	  match = function(ctx)
+	    local cs = vim.bo[ctx.buf].commentstring
+	    -- Line comments only. A commentstring with a suffix (/* %s */)
+	    -- would need a closing delimiter, which this rule does not emit.
+	    local lead = cs and cs:match("^%s*(.-)%s*%%s$")
+	    if not lead or lead == "" then return nil end
+	    local body = ctx.line:match("^%s*" .. vim.pesc(lead) .. "%s*(.*)$")
+	    if not body then return nil end
+	    return { lead = lead, body = body }
+	  end,
+	  handle = function(ctx, m)
+	    if m.body == "" then
+	      ctx.replace_line(ctx.ws)     -- empty comment: stop commenting
+	    else
+	      ctx.split("", ctx.ws .. m.lead .. " ")
+	    end
+	  end,
+	}
+
+	require("smart_enter").setup({
+	  filetypes = { ["*"] = { rules = { comment } } },
+	})
+<
+The `$` anchor on the commentstring pattern is what restricts this to line
+comments: `/* %s */` has text after `%s` and so does not match.
+
+						*smart-enter-recipe-counter*
+A lettered or roman list ~
+
+`counter` renumbers the marker from the previous entry, so there is no need
+for a functional rule. "{}" in `text` is replaced by the previous entry's
+counter plus one:
+>lua
+	{ env = "steps", item = { text = "\\item[{})] ", counter = "alpha" } }
+<
+gives a) then b) then c). Use "roman"/"Roman" for i) ii) iii), "Alpha" for
+A) B) C), "arabic" for 1) 2) 3).
+
+To keep continuing an empty entry instead of exiting the list, which is the
+usual default, set `exit_empty`:
+>lua
+	{ env = "enumerate", item = { text = "\\item ", exit_empty = false } }
+<
+						*smart-enter-recipe-compose*
+Sharing <CR> with autopairs and completion ~
+
+Three things want <CR> in insert mode: the completion menu (accept), autopairs
+(expand a pair onto its own line), and this plugin. Order matters, and each
+layer has to report whether it handled the key.
+
+Set `key = false` so no map is installed, then compose. Completion first,
+because an open menu should accept rather than insert anything; then the
+rules; then autopairs, which is the sensible fallback for a plain newline:
+>lua
+	require("smart_enter").setup({ key = false })
+
+	vim.keymap.set("i", "<CR>", function()
+	  -- 1. completion menu open: let it accept, insert nothing
+	  local blink = package.loaded["blink.cmp"]
+	  if blink and blink.is_visible() then
+	    blink.accept()
+	    return ""
+	  end
+	  -- 2. a smart-enter rule matches: it has already edited the buffer
+	  if require("smart_enter").dispatch({ fallback = false }) then
+	    return ""
+	  end
+	  -- 3. plain newline, through autopairs
+	  return require("nvim-autopairs").autopairs_cr()
+	end, { expr = true, replace_keycodes = false, desc = "smart <CR>" })
+<
+`fallback = false` is what makes this work: it runs the rules and reports
+whether one matched, without inserting the built in newline that would
+otherwise pre-empt step 3. Steps 1 and 2 return an empty string because they
+have already done the work; only step 3 returns keys for Neovim to feed.
+
+Substitute your own autopairs plugin in step 3. `nvim-autopairs` is shown
+because it is what NoetherVim ships; `require("mini.pairs").cr()` is the
+equivalent for mini.pairs.
+
+Keeping the smart behaviour on a separate key (<S-CR>, the default) avoids
+this entirely, at the cost of a key your terminal has to be able to send. See
+|smart-enter-key|.
+
+==============================================================================
+8. Health					*smart-enter-health*
 
 `:checkhealth smart_enter` reports the Neovim version, the configured `key`
 and `fallback`, the configured filetypes, and whether the `latex` parser is
 installed when a filetype uses the latex preset.
 
 ==============================================================================
-8. API						*smart-enter-api*
+9. API						*smart-enter-api*
 
 					*smart-enter.setup()*
 `require("smart_enter").setup(opts)`
