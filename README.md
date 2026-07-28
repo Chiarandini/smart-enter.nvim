@@ -7,6 +7,12 @@ right thing for where the cursor is:
 - continues a Markdown list, checkbox, or blockquote (renumbering ordered lists, exiting on an empty item)
 - otherwise inserts a plain newline that does not re-insert a comment leader
 
+![One key continuing an align row, then a list, then exiting it](assets/smart-enter.gif)
+
+*The same `<S-CR>`: inside `align` it closes the row with `\\` and opens `&= `;
+inside `itemize` it opens `\item `; on an empty item it clears the marker and
+leaves the list.*
+
 Rules are plain data. Detection is Treesitter based for LaTeX (no VimTeX
 dependency) and Lua pattern based for line shapes. Extend any filetype through
 `setup()` opts.
