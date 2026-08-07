@@ -9,6 +9,8 @@
 ---@field row integer 1 indexed cursor row
 ---@field col integer 0 indexed byte column of the cursor
 ---@field line string text of the current line
+---@field head string text before the cursor (the part that stays behind)
+---@field tail string text after the cursor (the part that moves down)
 ---@field ws string leading whitespace of the current line
 ---@field filetype string filetype of the buffer
 ---@field split fun(append?: string, prefix?: string) break the line at the cursor
@@ -24,12 +26,18 @@ function M.build()
 	local row, col = unpack(vim.api.nvim_win_get_cursor(win))
 	local line = vim.api.nvim_get_current_line()
 
+	-- The split the key is about to make. Rules that decide on what is being
+	-- left behind (a shell "\", a comment leader) need the text before the
+	-- cursor, not the whole line, so both halves are cut once here rather than
+	-- re-derived per rule from a 0-indexed byte column.
 	local ctx = {
 		win      = win,
 		buf      = buf,
 		row      = row,
 		col      = col,
 		line     = line,
+		head     = line:sub(1, col),
+		tail     = line:sub(col + 1),
 		ws       = line:match("^%s*") or "",
 		filetype = vim.bo[buf].filetype,
 	}

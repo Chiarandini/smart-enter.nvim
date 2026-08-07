@@ -17,6 +17,12 @@
 ---     { env = "exercise", item = "\\Question " }
 ---     { env = "steps", item = { text = "\\item[{})] ", counter = "alpha" } }
 ---
+--- The `continuation` field is the suffix counterpart: it closes the line being
+--- left with a marker and opens an indented continuation line (see
+--- actions.continuation). Guard it with a matcher, since the marker is only
+--- legal in some positions.
+---     { match = <matcher>, continuation = "\\" }
+---
 --- Functional rules take full control (list renumbering, exit on empty, and so
 --- on). `handle` returns false to fall through to the next rule; anything else
 --- (including nil) counts as handled and stops the chain.
@@ -33,6 +39,7 @@
 ---@field append? string declarative: text glued to the current line at the cursor
 ---@field prefix? string declarative: text that opens the new line
 ---@field item? string|{ text: string, exit_empty?: boolean, counter?: string } declarative list continuation (see actions.item)
+---@field continuation? string|{ marker: string, sep?: string, indent?: string|fun(ctx: SmartEnterContext): string } declarative line continuation (see actions.continuation)
 ---@field handle? fun(ctx: SmartEnterContext, match: table): boolean|nil functional action
 
 ---@class SmartEnterNormalRule
@@ -64,6 +71,8 @@ function M.normalize(rule)
 	if not run then
 		if rule.item then
 			run = require("smart_enter.actions").item(rule.item)
+		elseif rule.continuation then
+			run = require("smart_enter.actions").continuation(rule.continuation)
 		else
 			run = function(ctx)
 				ctx.split(rule.append, ctx.ws .. (rule.prefix or ""))

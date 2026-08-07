@@ -18,8 +18,8 @@ CONTENTS					*smart-enter-contents*
 
 smart-enter maps one insert mode key (default `<S-CR>`) to a context action.
 It runs the first matching rule for the current filetype (continue a LaTeX
-environment, a Markdown list, a blockquote) and otherwise inserts a plain
-newline that does not re-insert a comment leader.
+environment, a Markdown list, a blockquote, a shell command) and otherwise
+inserts a plain newline that does not re-insert a comment leader.
 
 Requirements:
 - Neovim 0.10 or newer.
@@ -41,6 +41,8 @@ Run |:checkhealth| smart_enter to confirm the key, parser, and filetypes.
 	    markdown = { preset = "markdown" },
 	    tex      = { preset = "latex" },
 	    latex    = { preset = "latex" },
+	    sh       = { preset = "shell" },
+	    zsh      = { preset = "shell" },
 	  },
 	})
 <
@@ -90,6 +92,21 @@ a table with `exit_empty` (default true) and `counter`:
 `counter` is "arabic", "alpha"/"Alpha", or "roman"/"Roman". The "{}" in `text`
 becomes the previous entry's counter plus one, so a) continues to b), i) to
 ii), 1) to 2).
+
+The `continuation` field is the suffix counterpart of `item`: rather than
+opening the new line with a marker, it closes the old one with it and indents.
+Pair it with a matcher, since a continuation marker is only legal in some
+positions (see the shell preset for what that means in practice):
+>lua
+	{ match = ok_here, continuation = "\\" }
+	{ match = ok_here, continuation = { marker = "`", sep = " " } }
+<
+Trailing whitespace before the marker and leading whitespace on the carried
+tail are both trimmed. The new line indents one 'shiftwidth' deeper, then holds
+that indent while the previous line already ends in the marker, so a long
+command stays a ladder rather than a staircase. `indent` overrides the policy
+with a string or a function of `ctx`.
+
 Functional rule ~
 Full control, for list renumbering, exit on empty, and the like. `handle`
 returns false to fall through; anything else (including nil) counts as
@@ -101,8 +118,9 @@ handled:
 <
 ctx object ~
 Fields: `buf`, `win`, `row` (1 indexed), `col` (0 indexed byte), `line`,
-`ws` (leading whitespace), `filetype`. Editing primitives (each a single
-undo unit):
+`head` and `tail` (the line before and after the cursor, the two halves the
+key is about to separate), `ws` (leading whitespace), `filetype`. Editing
+primitives (each a single undo unit):
 	`ctx.split(append, prefix)`   break at the cursor; new line = prefix
 	`ctx.replace_line(text)`      replace the whole current line
 
@@ -128,6 +146,32 @@ align/alignat/flalign families, "\item " in itemize/enumerate/description.
 List items are indented to the current item, so continuing a soft wrapped
 item stays aligned, and an empty "\item" drops the marker and exits the list.
 
+`shell` ~
+Command continuation: " \" closes the line and an indented line opens below.
+Use it for filetype `sh` (which covers both .sh and .bash) and `zsh`.
+
+The first continuation line indents one 'shiftwidth'; later ones hold that
+indent instead of stepping deeper. Whitespace either side of the break is
+trimmed, so the marker sits one space after the code and the carried tail
+starts at the indent.
+
+The preset is mostly guard. It declines, falling through to the plain newline,
+wherever a backslash would be wrong:
+
+	blank line	 nothing to continue
+	comment		 the "\" would be commented out, silently ending the
+			 command
+	inside '...'	 "\" is literal in single quotes
+	line already	 a second "\" escapes the first, which ends the
+	ends in "\"	 command while still looking correct
+	open operator	 after | || && ; { ( then do else in, the shell
+			 already continues by itself
+	heredoc body	 the body is data, not command text
+
+Quoting is tracked across the line, so the "#" in `echo "a # b"` is not read as
+a comment start. Heredocs are found by scanning up to 200 lines above the
+cursor for an unterminated delimiter.
+
 ==============================================================================
 5. Matchers and actions			*smart-enter-matchers*
 
@@ -139,10 +183,14 @@ item stays aligned, and an empty "\item" drops the marker and exits the list.
 			`names`; match data is { env = <name> }.
 `env_chain(ctx[, lang])` the enclosing environment names, innermost first.
 
-`require("smart_enter.actions").item(template)` is the handler behind the
-`item` field (see |smart-enter-rules|). Use the `item` field for lists; reach
-for actions.item directly only when composing with a custom `match` or
-`handle`.
+`require("smart_enter.actions")` exposes the handlers behind the declarative
+fields (see |smart-enter-rules|). Use the fields; reach for these directly only
+when composing with a custom `match` or `handle`.
+
+`item(template)`	continue a list, the `item` field.
+`continuation(spec)`	close the line with a marker and open an indented
+			one, the `continuation` field. `spec` is the marker,
+			or { marker, sep, indent }.
 
 matchers and actions are `require`d, so call them where setup() runs, for
 example inside a `config` function, the same as any Lua module loaded at
@@ -211,6 +259,32 @@ key continues the comment on demand.
 <
 The `$` anchor on the commentstring pattern is what restricts this to line
 comments: `/* %s */` has text after `%s` and so does not match.
+
+						*smart-enter-recipe-backslash*
+Backslash continuation in another filetype ~
+
+Dockerfile, make, and C macros spell "continues below" the same way the shell
+does, so they reuse the `continuation` field with a smaller guard. Only the
+positions where a backslash is wrong differ; the editing is shared:
+>lua
+	local cont = {
+	  match = function(ctx)
+	    if ctx.head:match("^%s*$") then return nil end   -- blank
+	    if ctx.head:match("^%s*#") then return nil end   -- comment
+	    if ctx.head:match("\\$")   then return nil end   -- already continued
+	    return {}
+	  end,
+	  continuation = "\\",
+	}
+
+	require("smart_enter").setup({ filetypes = {
+	  dockerfile = { rules = { cont } },
+	  make       = { rules = { cont } },
+	} })
+<
+For sh, bash, and zsh use the `shell` preset instead: quoting, heredocs, and
+the open-operator list are what make that one worth shipping, and none of them
+apply here.
 
 						*smart-enter-recipe-counter*
 A lettered or roman list ~

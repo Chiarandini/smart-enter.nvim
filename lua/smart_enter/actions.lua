@@ -173,4 +173,78 @@ function M.item(spec)
 	end
 end
 
+-- ── continuation ─────────────────────────────────────────────────────────
+-- The suffix counterpart of item: instead of opening the new line with a
+-- marker, close the old one with it. Shell, Dockerfile, make, and C macros all
+-- spell "this command continues below" as a trailing backslash.
+
+--- One indent level for `buf`, honouring 'expandtab' and 'shiftwidth'.
+---@param buf integer
+---@return string
+local function indent_unit(buf)
+	if vim.bo[buf].expandtab then
+		return string.rep(" ", vim.fn.shiftwidth())
+	end
+	return "\t"
+end
+
+--- Indent for the continued line: one level in when opening a continuation
+--- block, the current indent when already inside one (so a five line command
+--- stays a ladder instead of a staircase). The previous line ending in the
+--- marker is what says we are already inside one.
+---@param ctx SmartEnterContext
+---@param marker string
+---@return string
+local function continuation_indent(ctx, marker)
+	local prev = api.nvim_buf_get_lines(ctx.buf, ctx.row - 2, ctx.row - 1, false)[1]
+	if prev and prev:match(vim.pesc(marker) .. "%s*$") then
+		return ctx.ws
+	end
+	return ctx.ws .. indent_unit(ctx.buf)
+end
+
+--- Build a handler that continues the current logical line onto the next
+--- physical one: `marker` closes the line being left, and the new line opens
+--- at a continuation indent, carrying whatever followed the cursor.
+---
+--- `spec` is the marker, or a table:
+---   { marker = "\\", sep = " ", indent = "  " | function(ctx) }
+--- `sep` sits between the code and the marker (dropped when nothing precedes
+--- it). `indent` overrides the default one-level-then-hold policy.
+---
+--- Deciding WHERE this is legal belongs to the rule's matcher, not here: the
+--- token that means "continues below" is a fact about the language, but the
+--- places a marker would be wrong (comments, heredocs, an operator that
+--- already continues) differ per language.
+---@param spec string|{ marker: string, sep?: string, indent?: string|fun(ctx: SmartEnterContext): string }
+---@return fun(ctx: SmartEnterContext): true
+function M.continuation(spec)
+	if type(spec) == "string" then
+		spec = { marker = spec }
+	end
+	local marker = spec.marker
+	local sep    = spec.sep or " "
+
+	return function(ctx)
+		local head = ctx.head:gsub("%s+$", "")
+		local tail = ctx.tail:gsub("^%s+", "")
+
+		local indent = spec.indent
+		if type(indent) == "function" then
+			indent = indent(ctx)
+		end
+		indent = indent or continuation_indent(ctx, marker)
+
+		-- One call, so one undo unit (the contract ctx.split holds). split
+		-- itself cannot serve here: it glues text at the cursor verbatim, and a
+		-- continuation has to trim both sides of the break.
+		api.nvim_buf_set_lines(ctx.buf, ctx.row - 1, ctx.row, false, {
+			head == "" and marker or head .. sep .. marker,
+			indent .. tail,
+		})
+		api.nvim_win_set_cursor(ctx.win, { ctx.row + 1, #indent })
+		return true
+	end
+end
+
 return M

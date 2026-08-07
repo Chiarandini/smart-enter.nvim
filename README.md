@@ -5,6 +5,7 @@ right thing for where the cursor is:
 
 - continues a LaTeX environment (`\\` in a matrix, `\\` then `&= ` in `align`, `\item ` in a list)
 - continues a Markdown list, checkbox, or blockquote (renumbering ordered lists, exiting on an empty item)
+- continues a shell command (` \` and an indented line), staying out of the way where a backslash would be wrong
 - otherwise inserts a plain newline that does not re-insert a comment leader
 
 ![One key continuing an align row, then a list, then exiting it](assets/smart-enter.gif)
@@ -36,6 +37,8 @@ require("smart_enter").setup({
     markdown = { preset = "markdown" },
     tex      = { preset = "latex" },
     latex    = { preset = "latex" },
+    sh       = { preset = "shell" },
+    zsh      = { preset = "shell" },
   },
 })
 ```
@@ -48,6 +51,36 @@ lazy's way of passing that config, and `config` calls `setup`:
   opts = { filetypes = { markdown = { preset = "markdown" }, tex = { preset = "latex" } } },
   config = function(_, opts) require("smart_enter").setup(opts) end }
 ```
+
+## Presets
+
+`markdown` — checkbox, unordered, ordered (incrementing), and blockquote
+continuation; an empty item drops its marker and leaves the list.
+
+`latex` — environment continuation via Treesitter, honouring nesting: `\\` in
+the matrix and gather families, `\\` then `&= ` in the align family, `\item `
+in lists.
+
+`shell` — closes the line with ` \` and opens an indented continuation line.
+Filetype `sh` covers both `.sh` and `.bash`; `zsh` is separate.
+
+![Continuing a docker command, then declining after a pipe and in a comment](assets/smart-enter-shell.gif)
+
+The interesting half is where it *declines*, falling through to a plain
+newline, because a backslash there would be wrong:
+
+| Position | Why |
+|---|---|
+| blank line | nothing to continue |
+| comment | the `\` is commented out, silently ending the command |
+| inside `'...'` | `\` is literal in single quotes |
+| line already ends in `\` | a second one escapes the first, ending the command while still looking right |
+| after `\|` `\|\|` `&&` `;` `{` `(` `then` `do` `else` `in` | the shell already continues on its own |
+| heredoc body | the body is data |
+
+Quoting is tracked, so the `#` in `echo "a # b"` is not read as a comment. The
+first continuation line indents one `shiftwidth`; later ones hold that indent
+rather than stepping deeper.
 
 ## Extending
 
@@ -91,6 +124,20 @@ table with `exit_empty` and `counter`:
 `counter` is `"arabic"`, `"alpha"`/`"Alpha"`, or `"roman"`/`"Roman"`; the `{}`
 in `text` becomes the previous entry's counter plus one.
 
+`continuation` is the suffix counterpart of `item`: rather than opening the new
+line with a marker, it closes the old one with it, then indents. Pair it with a
+matcher, since a continuation marker is only legal in some positions:
+
+```lua
+{ match = ok_here, continuation = "\\" }                        -- shell, make, C macros
+{ match = ok_here, continuation = { marker = "`", sep = " " } } -- powershell
+```
+
+Trailing whitespace before the marker and leading whitespace on the carried
+tail are both trimmed. The new line indents one `shiftwidth` deeper, then holds
+that indent while the previous line already ends in the marker; override with
+`indent` (a string, or a function of `ctx`).
+
 Run your own logic with `handle` for anything the fields above do not cover.
 It returns `false` to fall through to the next rule; anything else (including
 `nil`) counts as handled:
@@ -102,7 +149,8 @@ end }
 ```
 
 The `ctx` object exposes `ctx.split(append, prefix)`, `ctx.replace_line(text)`,
-and the fields `buf`, `win`, `row`, `col`, `line`, `ws`, `filetype`.
+and the fields `buf`, `win`, `row`, `col`, `line`, `head` and `tail` (the line
+either side of the cursor), `ws`, `filetype`.
 
 ### Matchers and actions
 
@@ -111,8 +159,8 @@ else, two modules give building blocks for a rule's `match` and `handle`:
 
 - `require("smart_enter.matchers")`: `pattern(lua_pat)`, `ts_env(names[, lang])`,
   and `env_chain(ctx[, lang])` (enclosing environment names, innermost first).
-- `require("smart_enter.actions")`: `item(template)`, the handler behind the
-  `item` field.
+- `require("smart_enter.actions")`: `item(template)` and `continuation(spec)`,
+  the handlers behind the `item` and `continuation` fields.
 
 Both are `require`d, so call them where `setup` runs, for example inside a
 `config` function, the same as any Lua module loaded at startup.

@@ -25,8 +25,9 @@ end
 
 -- Set up a scratch buffer with `lines` and filetype `ft`, put the cursor at
 -- (row, col) [1-indexed row, 0-indexed col], run dispatch(), return the
--- resulting lines and the new cursor.
-local function run(ft, lines, row, col)
+-- resulting lines and the new cursor. `bo` sets buffer options, for the rules
+-- whose output depends on them ('expandtab', 'shiftwidth').
+local function run(ft, lines, row, col, bo)
 	-- <S-CR> fires in insert mode, where the cursor may sit one past the last
 	-- char. Headless runs in normal mode (which clamps), so allow the extra
 	-- column to reproduce the real end-of-line insert position.
@@ -34,6 +35,9 @@ local function run(ft, lines, row, col)
 	local buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	vim.bo[buf].filetype = ft
+	for opt, val in pairs(bo or {}) do
+		vim.bo[buf][opt] = val
+	end
 	vim.api.nvim_set_current_buf(buf)
 	vim.api.nvim_win_set_cursor(0, { row, col })
 	local handled = se.dispatch()
@@ -43,10 +47,21 @@ local function run(ft, lines, row, col)
 	return out, cur, handled
 end
 
+-- The shell preset's indent is one 'shiftwidth', so pin it rather than
+-- inherit whatever config the runner was launched with.
+local SH = { expandtab = true, shiftwidth = 2 }
+
 se.setup({
 	key = false,   -- don't touch the real <S-CR> during tests
 	filetypes = {
 		markdown = { preset = "markdown" },
+		sh       = { preset = "shell" },
+		-- The continuation action on its own, with every knob overridden, so
+		-- the declarative field's wiring is covered without the shell guards.
+		fakecont = { rules = { {
+			pattern      = "^GO",
+			continuation = { marker = "+", sep = "  ", indent = "    " },
+		} } },
 		-- Pattern-only fake filetypes so the rule engine (declarative append,
 		-- prefix, and item indentation) can be exercised without the latex
 		-- parser.
@@ -189,6 +204,78 @@ end
 do
 	local _, _, handled = run("randomft", { "plain" }, 1, 5)
 	eq("unmatched ft falls back", handled, false)
+end
+
+-- ── shell preset ─────────────────────────────────────────────────────────
+
+-- Continue a command: "\" closes the line, the new one indents one level.
+do
+	local out, cur = run("sh", { "docker run -it" }, 1, 14, SH)
+	eq("sh continues a command", out, { "docker run -it \\", "  " })
+	eq("sh cursor at end of the continuation indent", cur, { 2, 2 })
+end
+
+-- Already inside a continuation block: hold the indent instead of stepping
+-- deeper on every line.
+do
+	local out = run("sh", { "docker run -it \\", "  --rm" }, 2, 6, SH)
+	eq("sh holds the indent inside a continuation", out,
+		{ "docker run -it \\", "  --rm \\", "  " })
+end
+
+-- 'noexpandtab' indents with a tab.
+do
+	local out = run("sh", { "curl url" }, 1, 8, { expandtab = false })
+	eq("sh honours noexpandtab", out, { "curl url \\", "\t" })
+end
+
+-- Both sides of the break are trimmed: no double space before "\", and the
+-- tail does not carry its leading space onto the indented line.
+do
+	local out = run("sh", { "echo foo   " }, 1, 11, SH)
+	eq("sh trims before the backslash", out, { "echo foo \\", "  " })
+end
+do
+	local out = run("sh", { "echo foo bar" }, 1, 8, SH)
+	eq("sh mid-line split carries the tail", out, { "echo foo \\", "  bar" })
+end
+
+-- Guards: each declines, so the plain newline fallback runs instead.
+for _, case in ipairs({
+	{ "an existing backslash", { "docker run \\" },      1, 12 },
+	{ "an attached backslash", { "echo hi\\" },          1, 8  },
+	{ "a backslash then space",{ "echo hi \\ " },        1, 10 },
+	{ "a pipe",                { "cat foo |" },          1, 9 },
+	{ "&&",                    { "test -f x &&" },       1, 12 },
+	{ "`do`",                  { "for f in *; do" },     1, 14 },
+	{ "a whole-line comment",  { "  # explain this" },   1, 16 },
+	{ "a trailing comment",    { "echo hi  # note" },    1, 15 },
+	{ "an open single quote",  { "alias x='foo bar" },   1, 16 },
+	{ "a blank line",          { "echo hi", "" },        2, 0  },
+	{ "a heredoc body",        { "cat <<EOF", "hello" }, 2, 5  },
+}) do
+	local _, _, handled = run("sh", case[2], case[3], case[4], SH)
+	eq("sh declines after " .. case[1], handled, false)
+end
+
+-- A "#" inside double quotes is not a comment, so this one still continues.
+-- This is what the quote-aware scan buys over a "%s#" pattern.
+do
+	local out = run("sh", { 'echo "a # b"' }, 1, 12, SH)
+	eq("sh continues past a quoted hash", out, { 'echo "a # b" \\', "  " })
+end
+
+-- Past the heredoc terminator, normal service resumes.
+do
+	local _, _, handled = run("sh", { "cat <<EOF", "hi", "EOF", "echo done" }, 4, 9, SH)
+	eq("sh resumes after the heredoc terminator", handled, true)
+end
+
+-- The continuation field's marker, sep, and indent overrides.
+do
+	local out, cur = run("fakecont", { "GO here" }, 1, 7)
+	eq("continuation honours marker/sep/indent", out, { "GO here  +", "    " })
+	eq("continuation cursor at end of indent", cur, { 2, 4 })
 end
 
 -- LaTeX environment detection via Treesitter. Skipped when the latex parser
