@@ -76,7 +76,7 @@ a `\` there would be wrong. Press at `▏` and nothing is appended:
 | `cat log \|▏` &nbsp; `a && b▏` &nbsp; `for f in *; do▏` | the shell already continues; also `\|\|`, `;`, `{`, `(`, `then`, `else`, `in` |
 | `docker run \▏` | a second `\` **escapes the first** — the command ends, and the line still looks right |
 | `# a note▏` | the `\` would be commented out along with everything else |
-| `echo 'not closed▏` | inside `'...'` a `\` is a literal backslash, not a continuation |
+| `echo 'not closed▏` | in `'...'` a `\` is just a backslash — the bare newline already continues the string |
 | a heredoc body, or a blank line | there is no command here to continue |
 
 Row two is the one that earns the preset: every other case merely wastes a
@@ -214,6 +214,11 @@ smart-enter stays small on purpose. These belong to dedicated plugins:
 - Renumbering or reformatting a whole list after later edits (see autolist.nvim).
 - `<Tab>` and `<S-Tab>` indent and dedent of list items.
 - Normal mode `o` and `O` continuation. You can bind `dispatch()` to any key.
+- Continuing a comment leader. Neovim already does this on plain `<CR>` through
+  `'formatoptions'` and `'comments'`, for block comments (`/**` → ` * `) as well
+  as line ones — the `newline` fallback exists so this key can opt *out* of it.
+  For the reverse case, where `'formatoptions'` omits `r` and you want the
+  leader on demand, see the comment recipe in `:help smart-enter-recipes`.
 
 ## API
 

@@ -185,7 +185,8 @@ appended; the plain newline runs instead, because a "\" there would be wrong:
 
 	# a note|	 the "\" is commented out with everything else
 
-	echo 'not shut|	 inside '...' a "\" is a literal backslash
+	echo 'not shut|	 in '...' a "\" is just a backslash; the bare
+			 newline already continues the string
 
 	(heredoc body)	 there is no command here to continue
 	(blank line)
@@ -291,6 +292,13 @@ key continues the comment on demand.
 <
 The `$` anchor on the commentstring pattern is what restricts this to line
 comments: `/* %s */` has text after `%s` and so does not match.
+
+There is no preset for this, and no block comment equivalent, because Neovim
+already continues comment leaders on plain <CR> through 'formatoptions' "r" and
+'comments' -- including block comments, where "/**" continues as " * ". The
+"newline" fallback exists to opt OUT of that. This recipe is for the reverse
+case only: 'formatoptions' omits "r", so <CR> stays plain and the smart key
+continues a comment on demand.
 
 						*smart-enter-recipe-backslash*
 Backslash continuation in another filetype ~
