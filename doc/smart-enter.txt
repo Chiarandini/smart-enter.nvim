@@ -107,6 +107,24 @@ that indent while the previous line already ends in the marker, so a long
 command stays a ladder rather than a staircase. `indent` overrides the policy
 with a string or a function of `ctx`.
 
+The marker is the only part that varies across the family, so the one field
+covers all of it:
+
+	\	shell, Dockerfile, make, C/C++ macros, Tcl, Ruby, and
+		Python outside brackets
+	`	PowerShell
+	...	MATLAB, Octave
+	&	Fortran
+	^	Batch
+	%	LaTeX, with sep = "", to swallow the line break
+
+The language differences live in the matcher, not here: Python's marker is
+illegal inside ( [ {, C's applies only within a #define. That is why
+`continuation` carries no guard of its own.
+
+A language that marks continuation at the START of the next line instead of the
+end of this one, as Vimscript does with a leading "\", wants `prefix`.
+
 Functional rule ~
 Full control, for list renumbering, exit on empty, and the like. `handle`
 returns false to fall through; anything else (including nil) counts as
@@ -155,22 +173,29 @@ indent instead of stepping deeper. Whitespace either side of the break is
 trimmed, so the marker sits one space after the code and the carried tail
 starts at the indent.
 
-The preset is mostly guard. It declines, falling through to the plain newline,
-wherever a backslash would be wrong:
+The preset is mostly guard. Press where "|" sits below and nothing is
+appended; the plain newline runs instead, because a "\" there would be wrong:
+>
+	cat log ||	 the shell already continues. So do && ; { ( and
+	a && b|		 then, else, in, ||
+	for f in *; do|
 
-	blank line	 nothing to continue
-	comment		 the "\" would be commented out, silently ending the
-			 command
-	inside '...'	 "\" is literal in single quotes
-	line already	 a second "\" escapes the first, which ends the
-	ends in "\"	 command while still looking correct
-	open operator	 after | || && ; { ( then do else in, the shell
-			 already continues by itself
-	heredoc body	 the body is data, not command text
+	docker run \|	 a second "\" ESCAPES the first: the command ends
+			 there, and the line still looks correct
 
-Quoting is tracked across the line, so the "#" in `echo "a # b"` is not read as
-a comment start. Heredocs are found by scanning up to 200 lines above the
-cursor for an unterminated delimiter.
+	# a note|	 the "\" is commented out with everything else
+
+	echo 'not shut|	 inside '...' a "\" is a literal backslash
+
+	(heredoc body)	 there is no command here to continue
+	(blank line)
+<
+The second case is the one that earns the preset: the others waste a keypress,
+that one breaks the script silently.
+
+Quoting is tracked across the line, so the "#" in `echo "a # b"` is not a
+comment start and that line does continue. Heredocs are found by scanning up to
+200 lines above the cursor for an unterminated delimiter.
 
 ==============================================================================
 5. Matchers and actions			*smart-enter-matchers*
@@ -178,10 +203,17 @@ cursor for an unterminated delimiter.
 `require("smart_enter.matchers")` exposes builders for a rule's `match` field:
 
 `pattern(lua_pat)`	matches the current line; match data is the captures.
-`ts_env(names[, lang])`	matches when the cursor's nearest enclosing
-			*_environment (lang default "latex") is named in
-			`names`; match data is { env = <name> }.
+`ts_env(names[, lang])`	matches when the cursor's nearest enclosing LaTeX
+			environment is named in `names`; match data is
+			{ env = <name> }.
 `env_chain(ctx[, lang])` the enclosing environment names, innermost first.
+
+ts_env and env_chain are LaTeX only: they look for a node type ending in
+"environment" holding a "begin" child reading "\begin{name}". `lang` selects
+the parser for LaTeX under an injection (inside markdown, say); it does not
+port them to other languages, where that node shape does not exist. To match
+structure elsewhere, write a `match` over vim.treesitter.get_node() yourself,
+or do without a parser as the shell preset does.
 
 `require("smart_enter.actions")` exposes the handlers behind the declarative
 fields (see |smart-enter-rules|). Use the fields; reach for these directly only

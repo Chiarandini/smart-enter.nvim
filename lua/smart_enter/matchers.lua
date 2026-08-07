@@ -33,8 +33,16 @@ end
 --- Walk the Treesitter ancestors of the node at the cursor, outermost last,
 --- and collect every enclosing environment name. Used by ts_env and by the
 --- debug inspector.
+---
+--- LaTeX shaped, deliberately: it looks for a node type ending in
+--- "environment" holding a "begin" child that reads "\begin{name}". `lang` is
+--- for LaTeX under another parser (an injection inside markdown, say), NOT for
+--- other languages -- pass "bash" and you get an empty chain, because bash has
+--- no nodes of that shape. To match structure in another language, write a
+--- `match` function over vim.treesitter.get_node() yourself; the shell preset
+--- does the equivalent job with a line scan and no parser at all.
 ---@param ctx SmartEnterContext
----@param lang? string parser language (default "latex")
+---@param lang? string parser language for LaTeX (default "latex")
 ---@return string[] names innermost first
 ---@return string? err reason the chain is empty (no parser, no tree)
 function M.env_chain(ctx, lang)
@@ -69,10 +77,11 @@ function M.env_chain(ctx, lang)
 	return names
 end
 
---- Match when the cursor's nearest enclosing environment is named in `names`.
---- Treesitter based, so there is no VimTeX dependency and nesting is honoured.
+--- Match when the cursor's nearest enclosing LaTeX environment is named in
+--- `names`. Treesitter based, so there is no VimTeX dependency and nesting is
+--- honoured. LaTeX only -- see env_chain for why, and for the alternative.
 ---@param names string[] environment names to match, for example { "align", "align*" }
----@param lang? string parser language (default "latex")
+---@param lang? string parser language for LaTeX (default "latex")
 ---@return fun(ctx: SmartEnterContext): { env: string }|nil
 function M.ts_env(names, lang)
 	local set = {}

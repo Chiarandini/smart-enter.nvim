@@ -61,26 +61,29 @@ continuation; an empty item drops its marker and leaves the list.
 the matrix and gather families, `\\` then `&= ` in the align family, `\item `
 in lists.
 
-`shell` — closes the line with ` \` and opens an indented continuation line.
-Filetype `sh` covers both `.sh` and `.bash`; `zsh` is separate.
+`shell` — closes the line with ` \` and opens a continuation line, indented one
+`shiftwidth` the first time and held level after that, so a long command reads
+as a ladder rather than a staircase. Filetype `sh` covers both `.sh` and
+`.bash`; `zsh` is separate.
 
 ![Continuing a docker command, then declining after a pipe and in a comment](assets/smart-enter-shell.gif)
 
-The interesting half is where it *declines*, falling through to a plain
-newline, because a backslash there would be wrong:
+The interesting half is where it *declines* and just inserts a newline, because
+a `\` there would be wrong. Press at `▏` and nothing is appended:
 
-| Position | Why |
+| Press here | Because |
 |---|---|
-| blank line | nothing to continue |
-| comment | the `\` is commented out, silently ending the command |
-| inside `'...'` | `\` is literal in single quotes |
-| line already ends in `\` | a second one escapes the first, ending the command while still looking right |
-| after `\|` `\|\|` `&&` `;` `{` `(` `then` `do` `else` `in` | the shell already continues on its own |
-| heredoc body | the body is data |
+| `cat log \|▏` &nbsp; `a && b▏` &nbsp; `for f in *; do▏` | the shell already continues; also `\|\|`, `;`, `{`, `(`, `then`, `else`, `in` |
+| `docker run \▏` | a second `\` **escapes the first** — the command ends, and the line still looks right |
+| `# a note▏` | the `\` would be commented out along with everything else |
+| `echo 'not closed▏` | inside `'...'` a `\` is a literal backslash, not a continuation |
+| a heredoc body, or a blank line | there is no command here to continue |
 
-Quoting is tracked, so the `#` in `echo "a # b"` is not read as a comment. The
-first continuation line indents one `shiftwidth`; later ones hold that indent
-rather than stepping deeper.
+Row two is the one that earns the preset: every other case merely wastes a
+keypress, but doubling a backslash breaks the script silently.
+
+Quoting is tracked across the line, so the `#` in `echo "a # b"▏` is *not* a
+comment and that line does continue.
 
 ## Extending
 
@@ -110,7 +113,7 @@ line at the cursor (the row separator):
 ```
 
 Continue a list with `item`. The new entry lines up with the current entry,
-not with the deeper indent of a soft wrapped continuation line, and pressing on
+not with the deeper indent of a soft or hard wrapped continuation line, and pressing on
 an empty entry clears the marker and exits the list. `item` is a string, or a
 table with `exit_empty` and `counter`:
 
@@ -138,6 +141,25 @@ tail are both trimmed. The new line indents one `shiftwidth` deeper, then holds
 that indent while the previous line already ends in the marker; override with
 `indent` (a string, or a function of `ctx`).
 
+The marker is the only part that varies across the family, so the field covers
+all of it:
+
+| Marker | Languages |
+|---|---|
+| `\` | shell, Dockerfile, make, C/C++ macros, Tcl, Ruby, Python outside brackets |
+| `` ` `` | PowerShell |
+| `...` | MATLAB, Octave |
+| `&` | Fortran |
+| `^` | Batch |
+| `%` | LaTeX, with `sep = ""`, to swallow the line break |
+
+The matcher is where the language differences actually live — Python's marker
+is illegal inside `(`, `[`, `{`, C's only applies within a `#define` — which is
+why `continuation` takes no guard of its own.
+
+Languages that mark continuation at the *start* of the next line rather than
+the end of this one — Vimscript's leading `\` — want `prefix`, not this field.
+
 Run your own logic with `handle` for anything the fields above do not cover.
 It returns `false` to fall through to the next rule; anything else (including
 `nil`) counts as handled:
@@ -159,6 +181,11 @@ else, two modules give building blocks for a rule's `match` and `handle`:
 
 - `require("smart_enter.matchers")`: `pattern(lua_pat)`, `ts_env(names[, lang])`,
   and `env_chain(ctx[, lang])` (enclosing environment names, innermost first).
+  Both Treesitter matchers are LaTeX only — they look for a node type ending in
+  `environment` holding a `\begin{name}` child, so `lang` picks the parser for
+  LaTeX under an injection rather than porting them elsewhere. To match
+  structure in another language, write a `match` over `vim.treesitter.get_node()`,
+  or skip the parser as the shell preset does.
 - `require("smart_enter.actions")`: `item(template)` and `continuation(spec)`,
   the handlers behind the `item` and `continuation` fields.
 
