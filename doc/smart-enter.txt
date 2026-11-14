@@ -71,6 +71,13 @@ and stops the chain. A ["*"] filetype entry applies its rules to every
 filetype, after that filetype's own rules (useful for behaviour you want
 everywhere, such as continuing comments).
 
+Environment rules (`env`/`envs`) are the exception to "first wins": the
+innermost enclosing environment that any rule names decides. An `enumerate`
+rule of yours does not fire inside an `align*` nested in that list, because
+the preset handles `align*`. Environments no rule names (a `Proof`, a
+`center`) are see through, so the `enumerate` rule still fires in a `Proof`
+nested in the list. Between rules for the same environment, order decides.
+
 Declarative rule ~
 Static insertion. The new line is auto indented with the current line's
 leading whitespace, then `prefix`. `append` is glued to the current line at
@@ -204,9 +211,13 @@ comment start and that line does continue. Heredocs are found by scanning up to
 `require("smart_enter.matchers")` exposes builders for a rule's `match` field:
 
 `pattern(lua_pat)`	matches the current line; match data is the captures.
-`ts_env(names[, lang])`	matches when the cursor's nearest enclosing LaTeX
-			environment is named in `names`; match data is
-			{ env = <name> }.
+`ts_env(names[, lang[, scope]])`
+			matches when an enclosing LaTeX environment is named
+			in `names`; match data is { env = <name> }. `scope`
+			is a set { [name] = true } of environments other
+			rules handle: the walk outward stops at the first of
+			them not in `names`. Without it, any enclosing
+			environment in `names` matches.
 `env_chain(ctx[, lang])` the enclosing environment names, innermost first.
 
 ts_env and env_chain are LaTeX only: they look for a node type ending in

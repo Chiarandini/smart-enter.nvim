@@ -51,13 +51,26 @@ local matchers = require("smart_enter.matchers")
 local M = {}
 
 --- Turn a rule spec into a { match, run } pair with both halves resolved.
+---
+--- Pass one `scope` table to every rule of a filetype's list. Env rules add
+--- their names to it, so the innermost environment any rule handles decides
+--- which rule fires, rather than rule order: a user "enumerate" rule listed
+--- first must not shadow the preset's "align*" nested inside the list. Order
+--- still breaks ties between rules for the same environment.
 ---@param rule SmartEnterRule
+---@param scope? table<string, true> shared across one rule list, filled in here
 ---@return SmartEnterNormalRule
-function M.normalize(rule)
+function M.normalize(rule, scope)
 	local match = rule.match
 	if not match then
 		if rule.env or rule.envs then
-			match = matchers.ts_env(rule.envs or { rule.env })
+			local names = rule.envs or { rule.env }
+			if scope then
+				for _, n in ipairs(names) do
+					scope[n] = true
+				end
+			end
+			match = matchers.ts_env(names, nil, scope)
 		elseif rule.pattern then
 			match = matchers.pattern(rule.pattern)
 		else

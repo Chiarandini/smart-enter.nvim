@@ -72,6 +72,11 @@ se.setup({
 		fakealpha = { rules = { { pattern = "^", item = { text = "\\item[{})] ", counter = "alpha" } } } },
 		fakeroman = { rules = { { pattern = "^", item = { text = "{}) ", counter = "roman" } } } },
 		["*"]     = { rules = { { pattern = "^WILD", prefix = "wild " } } },
+		-- A user rule for an outer list ahead of the preset's math rules: the
+		-- order that once let "enumerate" shadow a nested "align*".
+		tex = { preset = "latex", rules = {
+			{ env = "enumerate", item = { text = "\\item ", exit_empty = false } },
+		} },
 	},
 })
 
@@ -299,6 +304,35 @@ do
 			matchers.ts_env({ "exercise" })(ctx), { env = "exercise" })
 		eq("ts_env rejects a non-enclosing env",
 			matchers.ts_env({ "align" })(ctx), nil)
+
+		local nested = {
+			"\\begin{enumerate}",
+			"  \\item foo",
+			"    \\begin{Proof}",
+			"      bar",
+			"      \\begin{align*}",
+			"        a &= b",
+			"      \\end{align*}",
+			"    \\end{Proof}",
+			"\\end{enumerate}",
+		}
+		local out = run("tex", nested, 6, #nested[6])
+		eq("align* inside a user-ruled enumerate continues the row",
+			{ out[6], out[7] }, { "        a &= b\\\\", "        &= " })
+		out = run("tex", nested, 4, #nested[4])
+		eq("an env no rule names (Proof) is see through to the list",
+			{ out[4], out[5] }, { "      bar", "      \\item " })
+
+		local both = { enumerate = true, ["align*"] = true }
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "\\begin{enumerate}", "\\begin{align*}",
+			"x", "\\end{align*}", "\\end{enumerate}" })
+		vim.api.nvim_set_current_buf(buf)
+		vim.api.nvim_win_set_cursor(0, { 3, 0 })
+		ctx = require("smart_enter.context").build()
+		eq("ts_env without scope matches an outer env",
+			matchers.ts_env({ "enumerate" })(ctx), { env = "enumerate" })
+		eq("ts_env with scope stops at a nearer claimed env",
+			matchers.ts_env({ "enumerate" }, nil, both)(ctx), nil)
 	else
 		print("SKIP ts_env (latex parser not installed)")
 	end

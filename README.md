@@ -88,7 +88,9 @@ comment and that line does continue.
 ## Extending
 
 `filetypes[ft]` is `{ preset = <name|list>, rules = {...} }`. Your `rules` are
-tried before the preset's, so they win:
+tried before the preset's, so they win. Environment rules are the exception:
+the innermost enclosing environment any rule names decides, so an `enumerate`
+rule of yours does not fire inside an `align*` nested in that list.
 
 ```lua
 -- adds a rule without touching the latex preset
@@ -179,7 +181,7 @@ either side of the cursor), `ws`, `filetype`.
 The `env`, `pattern`, and `item` fields cover the common rules. For anything
 else, two modules give building blocks for a rule's `match` and `handle`:
 
-- `require("smart_enter.matchers")`: `pattern(lua_pat)`, `ts_env(names[, lang])`,
+- `require("smart_enter.matchers")`: `pattern(lua_pat)`, `ts_env(names[, lang[, scope]])`,
   and `env_chain(ctx[, lang])` (enclosing environment names, innermost first).
   Both Treesitter matchers are LaTeX only — they look for a node type ending in
   `environment` holding a `\begin{name}` child, so `lang` picks the parser for

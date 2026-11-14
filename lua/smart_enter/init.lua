@@ -26,6 +26,7 @@ local function rules_for(ft)
 	local cfg   = require("smart_enter.config").get()
 	local rules = require("smart_enter.rules")
 	local list  = {}
+	local scope = {} -- every environment a rule in this list handles
 
 	-- Append a filetype config's user rules (they win), then its preset's.
 	local function add(ftcfg)
@@ -33,10 +34,10 @@ local function rules_for(ft)
 			return
 		end
 		for _, r in ipairs(ftcfg.rules or {}) do
-			list[#list + 1] = rules.normalize(r)
+			list[#list + 1] = rules.normalize(r, scope)
 		end
 		for _, r in ipairs(require("smart_enter.presets").get(ftcfg.preset) or {}) do
-			list[#list + 1] = rules.normalize(r)
+			list[#list + 1] = rules.normalize(r, scope)
 		end
 	end
 

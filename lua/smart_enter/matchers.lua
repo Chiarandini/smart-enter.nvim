@@ -77,13 +77,21 @@ function M.env_chain(ctx, lang)
 	return names
 end
 
---- Match when the cursor's nearest enclosing LaTeX environment is named in
---- `names`. Treesitter based, so there is no VimTeX dependency and nesting is
---- honoured. LaTeX only -- see env_chain for why, and for the alternative.
+--- Match when an enclosing LaTeX environment is named in `names`, walking out
+--- from the cursor. Treesitter based, so there is no VimTeX dependency and
+--- nesting is honoured. LaTeX only -- see env_chain for why, and for the
+--- alternative.
+---
+--- `scope` names the environments other rules handle: the walk gives up at the
+--- first of them that is not in `names`, so an outer "enumerate" rule cannot
+--- fire inside an "align*" nested in that list. Environments outside `scope`
+--- (a "Proof", a "center") are see through. Without `scope`, any enclosing
+--- environment named in `names` matches.
 ---@param names string[] environment names to match, for example { "align", "align*" }
 ---@param lang? string parser language for LaTeX (default "latex")
+---@param scope? table<string, true> environment names that stop the walk
 ---@return fun(ctx: SmartEnterContext): { env: string }|nil
-function M.ts_env(names, lang)
+function M.ts_env(names, lang, scope)
 	local set = {}
 	for _, n in ipairs(names) do
 		set[n] = true
@@ -93,6 +101,9 @@ function M.ts_env(names, lang)
 		for _, name in ipairs(M.env_chain(ctx, lang)) do
 			if set[name] then
 				return { env = name }
+			end
+			if scope and scope[name] then
+				return nil
 			end
 		end
 		return nil
